@@ -4,7 +4,7 @@ variable "subscription_id" {
 
 variable "location" {
   type    = string
-  default = "eastus2"
+  default = "westus"
 }
 
 variable "resource_group_name" {
