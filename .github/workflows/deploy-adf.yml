@@ -50,6 +50,36 @@ jobs:
         with:
           terraform_version: "1.9.8"
 
+      
+      - name: Diagnose Azure OIDC Configuration
+        shell: bash
+        env:
+          ACTUAL_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          ACTUAL_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          ACTUAL_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          EXPECTED_CLIENT_ID="3da296bf-f742-4da9-a6b4-2bd65582682f"
+          EXPECTED_TENANT_ID="0fd1fc08-f43d-4c1b-bd0f-17a9128a60a4"
+          EXPECTED_SUBSCRIPTION_ID="64e08ab2-3ae0-4176-ba12-0e7316f43c1e"
+
+          test "$ACTUAL_CLIENT_ID" = "$EXPECTED_CLIENT_ID" || {
+            echo "::error::Client ID mismatch"
+            exit 1
+          }
+
+          test "$ACTUAL_TENANT_ID" = "$EXPECTED_TENANT_ID" || {
+            echo "::error::Tenant ID mismatch"
+            exit 1
+          }
+
+          test "$ACTUAL_SUBSCRIPTION_ID" = "$EXPECTED_SUBSCRIPTION_ID" || {
+            echo "::error::Subscription ID mismatch"
+            exit 1
+          }
+
+          echo "All Azure identity values match."
+
+
       - name: Azure Login with OIDC
         uses: azure/login@v2
         with:
