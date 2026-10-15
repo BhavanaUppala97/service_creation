@@ -68,6 +68,11 @@ resource "azurerm_role_assignment" "storage_state" {
   role_definition_name = "Storage Blob Data Contributor"
   principal_id         = azurerm_user_assigned_identity.github.principal_id
 }
+resource "azurerm_role_assignment" "rbac_admin" {
+  scope                = "/subscriptions/${var.subscription_id}"
+  role_definition_name = "Role Based Access Control Administrator"
+  principal_id         = azurerm_user_assigned_identity.github.principal_id
+}
 
 output "github_client_id" {
   value = azurerm_user_assigned_identity.github.client_id
