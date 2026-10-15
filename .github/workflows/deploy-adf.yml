@@ -57,6 +57,12 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Verify Azure Connection
+        run: |
+          az account show \
+            --query "{Name:name,Subscription:id,Tenant:tenantId}" \
+            --output table
+
       - name: Terraform Init
         run: |
           terraform init \
