@@ -12,26 +12,27 @@ provider "azurerm" {
   subscription_id = var.subscription_id
 }
 
+
 resource "azurerm_resource_group" "state" {
   name     = "rg-terraform-state"
-  location = var.location
+  location = "westus"
 }
 
 resource "azurerm_storage_account" "state" {
-  name                     = var.state_storage_name
+  name                     = "storagemyprojectdev12345"
   resource_group_name      = azurerm_resource_group.state.name
   location                 = azurerm_resource_group.state.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
   min_tls_version          = "TLS1_2"
-  allow_nested_items_to_be_public = false
 }
 
-resource "azurerm_storage_container" "state" {
+resource "azurerm_storage_container" "tfstate" {
   name                  = "tfstate"
   storage_account_id    = azurerm_storage_account.state.id
   container_access_type = "private"
 }
+
 
 resource "azurerm_user_assigned_identity" "github" {
   name                = "id-github-terraform"
