@@ -1,0 +1,278 @@
+
+name: Terraform Azure Data Factory - Plan and Approve
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-adf-dev
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: 1 - Terraform Plan (review changes)
+    runs-on: ubuntu-latest
+
+    outputs:
+      reviewed_plan_hash: ${{ steps.fingerprint.outputs.hash }}
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_IN_AUTOMATION: "true"
+      STATE_RG: ${{ vars.TF_STATE_RG }}
+      STATE_STORAGE: ${{ vars.TF_STATE_STORAGE }}
+
+    steps:
+      - name: Checkout GitHub Code
+        uses: actions/checkout@v4
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Check required repository variables
+        shell: bash
+        run: |
+          for name in ARM_CLIENT_ID ARM_TENANT_ID ARM_SUBSCRIPTION_ID STATE_RG STATE_STORAGE; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is missing."
+              exit 1
+            fi
+          done
+          echo "All required GitHub variables are present."
+
+      # Print selected claims, not the JWT itself
+      - name: Inspect GitHub OIDC Claims
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, json, base64
+          import urllib.request, urllib.parse
+
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          auth = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+          sep = "&" if "?" in url else "?"
+
+          target = url + sep + urllib.parse.urlencode({
+              "audience": "api://AzureADTokenExchange"
+          })
+
+          req = urllib.request.Request(
+              target,
+              headers={"Authorization": "Bearer " + auth}
+          )
+
+          with urllib.request.urlopen(req) as response:
+              jwt = json.load(response)["value"]
+
+          part = jwt.split(".")[1]
+          part += "=" * (-len(part) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(part))
+
+          for name in (
+              "iss",
+              "sub",
+              "aud",
+              "repository_id",
+              "repository_owner_id",
+              "job_workflow_ref",
+              "environment"
+          ):
+              print(f"{name}: {claims.get(name)}")
+
+          print("OIDC claims inspected.")
+          PY
+
+      - name: Azure Login with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          audience: api://AzureADTokenExchange
+
+      - name: Verify Azure and Terraform Backend
+        shell: bash
+        run: |
+          az account show \
+            --query "{Name:name,Subscription:id,Tenant:tenantId}" \
+            --output table
+
+          az storage account show \
+            --resource-group "$STATE_RG" \
+            --name "$STATE_STORAGE" \
+            --query "{Name:name,Location:location}" \
+            --output table
+
+          az storage container show \
+            --account-name "$STATE_STORAGE" \
+            --name tfstate \
+            --auth-mode login \
+            --query "{Name:name}" \
+            --output table
+
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${STATE_RG}" \
+            -backend-config="storage_account_name=${STATE_STORAGE}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=adf-dev.tfstate" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="use_oidc=true"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Show Plan for Review
+        run: |
+          echo "### Proposed Terraform Changes" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+
+          terraform show -json tfplan | jq -r \
+            '.resource_changes[]? | "\(.address): \(.change.actions | join(", "))"' \
+            | tee plan-summary.txt
+
+          cat plan-summary.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Review the Terraform Plan logs before approval." \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fingerprint Reviewed Plan
+        id: fingerprint
+        shell: bash
+        run: |
+          hash=$(terraform show -json tfplan \
+            | jq -cS '{planned_values, resource_changes, output_changes}' \
+            | sha256sum | awk '{print $1}')
+
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          echo "Plan fingerprint: $hash"
+
+  apply:
+    name: 2 - Approval required, then deploy
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: adf-dev-approval
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_IN_AUTOMATION: "true"
+      STATE_RG: ${{ vars.TF_STATE_RG }}
+      STATE_STORAGE: ${{ vars.TF_STATE_STORAGE }}
+
+    steps:
+      - name: Checkout Reviewed Commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Show Apply Job OIDC Subject
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, json, base64
+          import urllib.request, urllib.parse
+
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          auth = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+          sep = "&" if "?" in url else "?"
+
+          target = url + sep + urllib.parse.urlencode({
+              "audience": "api://AzureADTokenExchange"
+          })
+
+          req = urllib.request.Request(
+              target,
+              headers={"Authorization": "Bearer " + auth}
+          )
+
+          with urllib.request.urlopen(req) as response:
+              jwt = json.load(response)["value"]
+
+          part = jwt.split(".")[1]
+          part += "=" * (-len(part) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(part))
+
+          print("Apply OIDC subject:", claims.get("sub"))
+          print("Repository ID:", claims.get("repository_id"))
+          PY
+
+      - name: Azure Login with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          audience: api://AzureADTokenExchange
+
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${STATE_RG}" \
+            -backend-config="storage_account_name=${STATE_STORAGE}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=adf-dev.tfstate" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="use_oidc=true"
+
+      - name: Final Terraform Plan
+        run: terraform plan -input=false -no-color -out=approved.tfplan
+
+      - name: Verify Reviewed Plan Is Unchanged
+        shell: bash
+        env:
+          REVIEWED_PLAN_HASH: ${{ needs.plan.outputs.reviewed_plan_hash }}
+        run: |
+          current=$(terraform show -json approved.tfplan \
+            | jq -cS '{planned_values, resource_changes, output_changes}' \
+            | sha256sum | awk '{print $1}')
+
+          if [ "$current" != "$REVIEWED_PLAN_HASH" ]; then
+            echo "::error::Terraform plan changed after approval."
+            echo "Run the workflow again to review the new plan."
+            exit 1
+          fi
+
+          echo "Plan matches the reviewed plan."
+
+      - name: Terraform Apply
+        run: terraform apply -input=false -auto-approve approved.tfplan
+
+      - name: Terraform Outputs
+        run: terraform output
