@@ -88,6 +88,44 @@ jobs:
               print(f"{name}: {claims.get(name)}")
           PY
 
+      
+      - name: Inspect GitHub OIDC Claims
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, json, base64
+          import urllib.request, urllib.parse
+
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          token = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+
+          query = urllib.parse.urlencode({
+              "audience": "api://AzureADTokenExchange"
+          })
+
+          sep = "&" if "?" in url else "?"
+          request = urllib.request.Request(
+              url + sep + query,
+              headers={"Authorization": f"Bearer {token}"}
+          )
+
+          with urllib.request.urlopen(request) as response:
+              jwt = json.load(response)["value"]
+
+          encoded = jwt.split(".")[1]
+          encoded += "=" * (-len(encoded) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(encoded))
+
+          for key in [
+              "iss",
+              "sub",
+              "aud",
+              "repository_id",
+              "repository_owner_id"
+          ]:
+              print(f"{key}: {claims.get(key)}")
+          PY
+
 
       - name: Azure Login with OIDC
         uses: azure/login@v3
