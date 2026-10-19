@@ -12,7 +12,7 @@ variable "github_repo" {
 
 variable "location" {
   type    = string
-  default = "eastus2"
+  default = "westus"
 }
 
 variable "state_storage_name" {
