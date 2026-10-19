@@ -21,4 +21,3 @@ output "linked_service_name" {
 output "pipeline_name" {
   value = azurerm_data_factory_pipeline.sample.name
 }
- 
