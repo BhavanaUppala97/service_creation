@@ -17,7 +17,7 @@ resource "azurerm_resource_group" "state" {
   name     = "rg-terraform-state"
   location = "westus"
 }
-
+ 
 resource "azurerm_storage_account" "state" {
   name                     = "storagemyprojectdev12345"
   resource_group_name      = azurerm_resource_group.state.name
