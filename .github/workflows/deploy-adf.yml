@@ -1,3 +1,4 @@
+
 name: Terraform Azure Data Factory - Plan and Approve
 
 on:
@@ -15,24 +16,29 @@ jobs:
   plan:
     name: 1 - Terraform Plan (review changes)
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: terraform
+
     env:
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      ARM_USE_OIDC: 'true'
-      ARM_USE_AZUREAD: 'true'
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
       TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      TF_IN_AUTOMATION: 'true'
+      TF_IN_AUTOMATION: "true"
+
     steps:
       - name: Checkout GitHub Code
         uses: actions/checkout@v4
+
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.9.8'
+          terraform_version: "1.9.8"
+
       - name: Check required repository variables
         shell: bash
         env:
@@ -45,9 +51,10 @@ jobs:
               exit 1
             fi
           done
-      
-      
-      - name: Verify GitHub OIDC Token Claims
+          echo "All required repository variables are configured."
+
+      # Diagnose the exact claims GitHub sends to Azure
+      - name: Inspect GitHub OIDC Claims
         shell: bash
         run: |
           python3 - <<'PY'
@@ -58,7 +65,7 @@ jobs:
           import urllib.parse
 
           url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-          token = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+          request_token = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
 
           query = urllib.parse.urlencode({
               "audience": "api://AzureADTokenExchange"
@@ -68,45 +75,9 @@ jobs:
 
           request = urllib.request.Request(
               url + separator + query,
-              headers={"Authorization": "Bearer " + token}
-          )
-
-          with urllib.request.urlopen(request) as response:
-              jwt = json.load(response)["value"]
-
-          payload = jwt.split(".")[1]
-          payload += "=" * (-len(payload) % 4)
-          claims = json.loads(base64.urlsafe_b64decode(payload))
-
-          for name in [
-              "iss",
-              "sub",
-              "aud",
-              "repository_id",
-              "repository_owner_id"
-          ]:
-              print(f"{name}: {claims.get(name)}")
-          PY
-
-      
-      - name: Inspect GitHub OIDC Claims
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import os, json, base64
-          import urllib.request, urllib.parse
-
-          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-          token = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
-
-          query = urllib.parse.urlencode({
-              "audience": "api://AzureADTokenExchange"
-          })
-
-          sep = "&" if "?" in url else "?"
-          request = urllib.request.Request(
-              url + sep + query,
-              headers={"Authorization": f"Bearer {token}"}
+              headers={
+                  "Authorization": f"Bearer {request_token}"
+              }
           )
 
           with urllib.request.urlopen(request) as response:
@@ -114,7 +85,10 @@ jobs:
 
           encoded = jwt.split(".")[1]
           encoded += "=" * (-len(encoded) % 4)
-          claims = json.loads(base64.urlsafe_b64decode(encoded))
+
+          claims = json.loads(
+              base64.urlsafe_b64decode(encoded)
+          )
 
           for key in [
               "iss",
@@ -126,7 +100,6 @@ jobs:
               print(f"{key}: {claims.get(key)}")
           PY
 
-
       - name: Azure Login with OIDC
         uses: azure/login@v3
         with:
@@ -134,6 +107,13 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           audience: api://AzureADTokenExchange
+
+      - name: Verify Azure Connection
+        run: |
+          az account show \
+            --query "{Name:name,Subscription:id,Tenant:tenantId}" \
+            --output table
+
       - name: Terraform Init
         run: |
           terraform init -input=false \
@@ -143,43 +123,52 @@ jobs:
             -backend-config="key=adf-dev.tfstate" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
+
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
+
       - name: Terraform Validate
         run: terraform validate
+
       - name: Terraform Plan
         run: terraform plan -input=false -no-color -out=tfplan
+
       - name: Show plan for review
         run: |
           terraform show -no-color tfplan
-          echo '### Terraform plan completed' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Review the Terraform Plan logs in this job before approving deployment.' >> "$GITHUB_STEP_SUMMARY"
+          echo "### Terraform plan completed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review the Terraform Plan logs before approving deployment." >> "$GITHUB_STEP_SUMMARY"
 
   apply:
     name: 2 - Approval required, then deploy
     needs: plan
     runs-on: ubuntu-latest
     environment: adf-dev-approval
+
     defaults:
       run:
         working-directory: terraform
+
     env:
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      ARM_USE_OIDC: 'true'
-      ARM_USE_AZUREAD: 'true'
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
       TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      TF_IN_AUTOMATION: 'true'
+      TF_IN_AUTOMATION: "true"
+
     steps:
       - name: Checkout reviewed commit
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.9.8'
+          terraform_version: "1.9.8"
+
       - name: Azure Login with OIDC
         uses: azure/login@v3
         with:
@@ -187,6 +176,7 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           audience: api://AzureADTokenExchange
+
       - name: Terraform Init
         run: |
           terraform init -input=false \
@@ -196,11 +186,12 @@ jobs:
             -backend-config="key=adf-dev.tfstate" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
-      # Recalculate at deployment time to avoid distributing sensitive binary plan artifacts.
-      # This is NOT guaranteed to equal the earlier reviewed plan if infrastructure changes.
+
       - name: Final Terraform Plan
         run: terraform plan -input=false -no-color -out=approved.tfplan
+
       - name: Terraform Apply
         run: terraform apply -input=false -auto-approve approved.tfplan
-      - name: Outputs
+
+      - name: Show Terraform Outputs
         run: terraform output
