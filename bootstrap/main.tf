@@ -13,13 +13,11 @@ provider "azurerm" {
   subscription_id = var.subscription_id
 }
 
-# Create Terraform Backend Resource Group
 resource "azurerm_resource_group" "state" {
   name     = "rg-terraform-state"
   location = "westus"
 }
 
-# Create Storage Account
 resource "azurerm_storage_account" "state" {
   name                     = var.state_storage_name
   resource_group_name      = azurerm_resource_group.state.name
@@ -27,10 +25,8 @@ resource "azurerm_storage_account" "state" {
   account_tier             = "Standard"
   account_replication_type = "LRS"
   min_tls_version          = "TLS1_2"
-  allow_nested_items_to_be_public = false
 }
 
-# Create Terraform State Container
 resource "azurerm_storage_container" "tfstate" {
   name                  = "tfstate"
   storage_account_id    = azurerm_storage_account.state.id
@@ -39,8 +35,4 @@ resource "azurerm_storage_container" "tfstate" {
 
 output "state_storage_account" {
   value = azurerm_storage_account.state.name
-}
-
-output "state_resource_group" {
-  value = azurerm_resource_group.state.name
 }
