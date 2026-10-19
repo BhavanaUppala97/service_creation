@@ -1,18 +1,6 @@
-name: Terraform Azure Data Factory CI-CD
+name: Terraform Azure Data Factory - Plan and Approve
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "terraform/**"
-      - ".github/workflows/deploy-adf.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "terraform/**"
-      - ".github/workflows/deploy-adf.yml"
   workflow_dispatch:
 
 permissions:
@@ -24,62 +12,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  terraform:
-    name: Terraform Deploy ADF
+  plan:
+    name: 1 - Terraform Plan (review changes)
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: terraform
-
     env:
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      ARM_USE_OIDC: "true"
-      ARM_USE_AZUREAD: "true"
+      ARM_USE_OIDC: 'true'
+      ARM_USE_AZUREAD: 'true'
       TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      TF_IN_AUTOMATION: "true"
-
+      TF_IN_AUTOMATION: 'true'
     steps:
       - name: Checkout GitHub Code
         uses: actions/checkout@v4
-
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.9.8"
-
-      
-      - name: Diagnose Azure OIDC Configuration
+          terraform_version: '1.9.8'
+      - name: Check required repository variables
         shell: bash
         env:
-          ACTUAL_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-          ACTUAL_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-          ACTUAL_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          STATE_RG: ${{ vars.TF_STATE_RG }}
+          STATE_STORAGE: ${{ vars.TF_STATE_STORAGE }}
         run: |
-          EXPECTED_CLIENT_ID="3da296bf-f742-4da9-a6b4-2bd65582682f"
-          EXPECTED_TENANT_ID="0fd1fc08-f43d-4c1b-bd0f-17a9128a60a4"
-          EXPECTED_SUBSCRIPTION_ID="64e08ab2-3ae0-4176-ba12-0e7316f43c1e"
-
-          test "$ACTUAL_CLIENT_ID" = "$EXPECTED_CLIENT_ID" || {
-            echo "::error::Client ID mismatch"
-            exit 1
-          }
-
-          test "$ACTUAL_TENANT_ID" = "$EXPECTED_TENANT_ID" || {
-            echo "::error::Tenant ID mismatch"
-            exit 1
-          }
-
-          test "$ACTUAL_SUBSCRIPTION_ID" = "$EXPECTED_SUBSCRIPTION_ID" || {
-            echo "::error::Subscription ID mismatch"
-            exit 1
-          }
-
-          echo "All Azure identity values match."
-
-
+          for name in ARM_CLIENT_ID ARM_TENANT_ID ARM_SUBSCRIPTION_ID STATE_RG STATE_STORAGE; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is missing"
+              exit 1
+            fi
+          done
       - name: Azure Login with OIDC
         uses: azure/login@v3
         with:
@@ -87,32 +52,73 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           audience: api://AzureADTokenExchange
-
-      - name: Verify Azure Connection
-        run: |
-          az account show \
-            --query "{Name:name,Subscription:id,Tenant:tenantId}" \
-            --output table
-
       - name: Terraform Init
         run: |
-          terraform init \
+          terraform init -input=false \
             -backend-config="resource_group_name=${{ vars.TF_STATE_RG }}" \
             -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE }}" \
             -backend-config="container_name=tfstate" \
             -backend-config="key=adf-dev.tfstate" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
-
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
-
       - name: Terraform Validate
         run: terraform validate
-
       - name: Terraform Plan
-        run: terraform plan -out=tfplan
+        run: terraform plan -input=false -no-color -out=tfplan
+      - name: Show plan for review
+        run: |
+          terraform show -no-color tfplan
+          echo '### Terraform plan completed' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Review the Terraform Plan logs in this job before approving deployment.' >> "$GITHUB_STEP_SUMMARY"
 
+  apply:
+    name: 2 - Approval required, then deploy
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: adf-dev-approval
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: 'true'
+      ARM_USE_AZUREAD: 'true'
+      TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_IN_AUTOMATION: 'true'
+    steps:
+      - name: Checkout reviewed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+      - name: Azure Login with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          audience: api://AzureADTokenExchange
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${{ vars.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=adf-dev.tfstate" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="use_oidc=true"
+      # Recalculate at deployment time to avoid distributing sensitive binary plan artifacts.
+      # This is NOT guaranteed to equal the earlier reviewed plan if infrastructure changes.
+      - name: Final Terraform Plan
+        run: terraform plan -input=false -no-color -out=approved.tfplan
       - name: Terraform Apply
-        if: github.event_name == 'workflow_dispatch'
-        run: terraform apply -auto-approve tfplan
+        run: terraform apply -input=false -auto-approve approved.tfplan
+      - name: Outputs
+        run: terraform output
