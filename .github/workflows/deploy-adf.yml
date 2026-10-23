@@ -34,9 +34,8 @@ jobs:
       TF_IN_AUTOMATION: "true"
       STATE_RG: ${{ vars.TF_STATE_RG }}
       STATE_STORAGE: ${{ vars.TF_STATE_STORAGE }}
+      TF_VAR_synapse_sql_password: ${{ vars.SYNAPSE_SQL_ADMIN_PASSWORD }}
       
-
-
     steps:
       - name: Checkout GitHub Code
         uses: actions/checkout@v4
@@ -192,6 +191,7 @@ jobs:
       TF_IN_AUTOMATION: "true"
       STATE_RG: ${{ vars.TF_STATE_RG }}
       STATE_STORAGE: ${{ vars.TF_STATE_STORAGE }}
+      TF_VAR_synapse_sql_password: ${{ vars.SYNAPSE_SQL_ADMIN_PASSWORD }}
 
     steps:
       - name: Checkout Reviewed Commit
