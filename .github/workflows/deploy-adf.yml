@@ -34,6 +34,8 @@ jobs:
       TF_IN_AUTOMATION: "true"
       STATE_RG: ${{ vars.TF_STATE_RG }}
       STATE_STORAGE: ${{ vars.TF_STATE_STORAGE }}
+      TF_VAR_synapse_sql_password: ${{ secrets.SYNAPSE_SQL_ADMIN_PASSWORD }}
+
       
     steps:
       - name: Checkout GitHub Code
@@ -140,6 +142,15 @@ jobs:
 
       - name: Terraform Validate
         run: terraform validate
+
+      - name: Verify Synapse SQL Password
+        run: |
+           if [ -z "${TF_VAR_synapse_sql_password:-}" ]; then
+            echo "::error::Synapse SQL password is missing"
+            exit 1
+           fi
+
+           echo "Synapse SQL password is configured successfully"
 
       - name: Terraform Plan
         run: 
