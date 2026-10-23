@@ -34,7 +34,7 @@ jobs:
       TF_IN_AUTOMATION: "true"
       STATE_RG: ${{ vars.TF_STATE_RG }}
       STATE_STORAGE: ${{ vars.TF_STATE_STORAGE }}
-      TF_VAR_synapse_sql_password: ${{ vars.SYNAPSE_SQL_ADMIN_PASSWORD }}
+      
 
 
     steps:
@@ -254,7 +254,11 @@ jobs:
             -backend-config="use_oidc=true"
 
       - name: Final Terraform Plan
-        run: terraform plan -input=false -no-color -out=approved.tfplan
+        env:
+          TF_VAR_synapse_sql_password: ${{ vars.SYNAPSE_SQL_ADMIN_PASSWORD }}
+        run: 
+          terraform plan -input=false -no-color -out=approved.tfplan
+        
 
       - name: Verify Reviewed Plan Is Unchanged
         shell: bash
