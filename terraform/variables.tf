@@ -24,3 +24,30 @@ variable "environment" {
   type    = string
   default = "dev"
 }
+
+# Synapse configuration
+
+variable "synapse_resource_group" {
+  type    = string
+  default = "rg-synapse-dev"
+}
+
+variable "synapse_location" {
+  type    = string
+  default = "westus"
+}
+
+variable "synapse_storage_name" {
+  type    = string
+  default = "synapselakevenkat2026"
+}
+
+variable "synapse_workspace_name" {
+  type    = string
+  default = "synapse-venkat-dev-2026"
+}
+
+variable "synapse_sql_password" {
+  type      = string
+  sensitive = true
+}
