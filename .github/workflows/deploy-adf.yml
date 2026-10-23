@@ -252,12 +252,17 @@ jobs:
             -backend-config="key=adf-dev.tfstate" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
-
+            
       - name: Final Terraform Plan
         env:
-          TF_VAR_synapse_sql_password: ${{ vars.SYNAPSE_SQL_ADMIN_PASSWORD }}
-        run: 
-          terraform plan -input=false -no-color -out=approved.tfplan
+            TF_VAR_synapse_sql_password: ${{ secrets.SYNAPSE_SQL_ADMIN_PASSWORD }}
+        run: |
+            if [ -z "$TF_VAR_synapse_sql_password" ]; then
+              echo "::error::SYNAPSE_SQL_ADMIN_PASSWORD is missing or empty"
+              exit 1
+            fi
+            terraform plan -input=false -no-color -out=approved.tfplan
+
         
 
       - name: Verify Reviewed Plan Is Unchanged
