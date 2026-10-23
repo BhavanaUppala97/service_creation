@@ -12,18 +12,20 @@ resource "azurerm_resource_group" "synapse_rg" {
 # Synapse Data Lake Storage Gen2
 # ---------------------------------------
 
+
 resource "azurerm_storage_account" "synapse_storage" {
-  name                     = var.synapse_storage_name
-  resource_group_name      = azurerm_resource_group.synapse_rg.name
-  location                 = azurerm_resource_group.synapse_rg.location
+  name                = var.synapse_storage_name
+  resource_group_name = azurerm_resource_group.synapse_rg.name
+  location            = azurerm_resource_group.synapse_rg.location
 
   account_tier             = "Standard"
   account_replication_type = "LRS"
   account_kind             = "StorageV2"
 
-  is_hns_enabled           = true
-  min_tls_version          = "TLS1_2"
+  is_hns_enabled  = true
+  min_tls_version = "TLS1_2"
 }
+
 
 # ---------------------------------------
 # Synapse Data Lake Filesystem
