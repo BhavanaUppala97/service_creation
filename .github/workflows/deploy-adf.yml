@@ -34,7 +34,7 @@ jobs:
       TF_IN_AUTOMATION: "true"
       STATE_RG: ${{ vars.TF_STATE_RG }}
       STATE_STORAGE: ${{ vars.TF_STATE_STORAGE }}
-      TF_VAR_synapse_sql_password: ${{ secrets.SYNAPSE_SQL_ADMIN_PASSWORD }}
+      TF_VAR_synapse_sql_password: ${{ vars.SYNAPSE_SQL_ADMIN_PASSWORD }}
 
 
     steps:
