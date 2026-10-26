@@ -82,3 +82,16 @@ resource "azurerm_synapse_spark_pool" "spark_pool" {
     delay_in_minutes = 15
   }
 }
+
+variable "synapse_user_object_id" {
+  description = "Microsoft Entra Object ID of the user"
+  type        = string
+}
+
+resource "azurerm_synapse_role_assignment" "sql_admin" {
+  synapse_workspace_id = azurerm_synapse_workspace.synapse_workspace.id
+
+  role_name      = "Synapse SQL Administrator"
+  principal_id   = var.synapse_user_object_id
+  principal_type = "User"
+}
