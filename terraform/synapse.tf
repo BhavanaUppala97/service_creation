@@ -89,9 +89,22 @@ variable "synapse_user_object_id" {
 }
 
 resource "azurerm_synapse_role_assignment" "sql_admin" {
+
+depends_on = [
+  azurerm_synapse_firewall_rule.github_runner
+]
   synapse_workspace_id = azurerm_synapse_workspace.synapse_workspace.id
 
   role_name      = "Synapse SQL Administrator"
   principal_id   = var.synapse_user_object_id
   principal_type = "User"
+}
+
+
+resource "azurerm_synapse_firewall_rule" "github_runner" {
+  name                 = "AllowGitHubRunner"
+  synapse_workspace_id = azurerm_synapse_workspace.synapse_workspace.id
+
+  start_ip_address = "20.104.156.185"
+  end_ip_address   = "20.104.156.185"
 }
