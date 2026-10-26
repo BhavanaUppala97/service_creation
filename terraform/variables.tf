@@ -51,9 +51,3 @@ variable "synapse_sql_password" {
   type      = string
   sensitive = true
 }
-
-variable "synapse_user_object_id" {
-  type        = string
-  description = "Object ID of the Synapse SQL administrator"
-}
-
