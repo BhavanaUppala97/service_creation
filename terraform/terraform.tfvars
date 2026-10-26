@@ -9,3 +9,5 @@ synapse_resource_group = "rg-synapse-dev"
 synapse_location       = "westus"
 synapse_storage_name   = "synapselakevenkat2026"
 synapse_workspace_name = "synapse-venkat-dev-2026"
+
+synapse_user_object_id = "1baa5fa8-b7ec-4f07-858f-c46122c7e552"
