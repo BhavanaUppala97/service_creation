@@ -293,8 +293,43 @@ jobs:
 
           echo "Plan matches the reviewed plan."
 
+      - name: Allow current GitHub runner in Synapse
+        shell: bash
+        run: |
+          RUNNER_IP=$(curl -4 -fsS https://api.ipify.org)
+
+          echo "Current runner IP: $RUNNER_IP"
+
+          az synapse workspace firewall-rule create \
+            --resource-group rg-synapse-dev \
+            --workspace-name synapse-venkat-dev-2026 \
+            --name TemporaryGitHubRunner \
+            --start-ip-address "$RUNNER_IP" \
+            --end-ip-address "$RUNNER_IP" \
+            --output none
+
+          az synapse workspace firewall-rule wait \
+            --resource-group rg-synapse-dev \
+            --workspace-name synapse-venkat-dev-2026 \
+            --rule-name TemporaryGitHubRunner \
+            --created \
+            --timeout 300
+          # Allow time for firewall propagation
+          sleep 60
+
       - name: Terraform Apply
         run: terraform apply -input=false -auto-approve approved.tfplan
+
+        
+      - name: Remove temporary Synapse firewall rule
+        if: always()
+        shell: bash
+        run: |
+          az synapse workspace firewall-rule delete \
+          --resource-group rg-synapse-dev \
+          --workspace-name synapse-venkat-dev-2026 \
+          --name TemporaryGitHubRunner \
+          --yes
 
       - name: Terraform Outputs
         run: terraform output
